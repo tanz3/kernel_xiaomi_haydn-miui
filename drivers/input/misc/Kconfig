@@ -915,5 +915,6 @@ config INPUT_STPMIC1_ONKEY
 	  module will be called stpmic1_onkey.
 
 source "drivers/input/misc/aw8697_haptic/Kconfig"
+source "drivers/input/misc/aw8624_haptic/Kconfig"
 
 endif

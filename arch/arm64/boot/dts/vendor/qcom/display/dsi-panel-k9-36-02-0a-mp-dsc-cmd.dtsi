@@ -151,7 +151,8 @@
 				qcom,mdss-dsi-nolp-command = [
 					15 01 00 00 00 00 02 65 00
 					05 01 00 00 00 00 01 38
-					15 01 00 00 00 00 02 2F 02];
+					15 01 00 00 19 00 02 2F 02
+					39 01 00 00 00 00 03 51 03 FF];
 				qcom,mdss-dsi-nolp-command-state = "dsi_lp_mode";
 
 				qcom,compression-mode = "dsc";
@@ -272,7 +273,8 @@
 				qcom,mdss-dsi-nolp-command = [
 					15 01 00 00 00 00 02 65 00
 					05 01 00 00 00 00 01 38
-					15 01 00 00 00 00 02 2F 01];
+					15 01 00 00 19 00 02 2F 01
+					39 01 00 00 00 00 03 51 03 FF];
 				qcom,mdss-dsi-nolp-command-state = "dsi_lp_mode";
 
 				qcom,compression-mode = "dsc";

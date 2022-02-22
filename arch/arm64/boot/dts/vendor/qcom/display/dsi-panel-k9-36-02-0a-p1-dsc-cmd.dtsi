@@ -358,11 +358,17 @@
 	mi,hbm-on-51-index = <1>;
 	mi,hbm-bl-min-level = <1>;
 	mi,hbm-bl-max-level = <2047>;
+	mi,mdss-dsi-panel-dc-type = <0>;
 	mi,panel-on-dimming-delay = <120>;
 	mi,fp-display-on-optimize-flag;
+	mi,max-brightness-clone = <2047>;
+	mi,step-hbm-flag;
 
 	/* IRQF_ONESHOT | IRQF_TRIGGER_FALLING */
 	mi,esd-err-irq-gpio = <&tlmm 80 0x2002>;
+
+	mi,mdss-dsi-panel-bl-nolp-enable;
+	mi,mdss-dsi-panel-bl-nolp-index = <7>;
 
 	qcom,esd-check-enabled;
 	qcom,esd-aod-check-enabled;

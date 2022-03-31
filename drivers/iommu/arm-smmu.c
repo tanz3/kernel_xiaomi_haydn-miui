@@ -3299,6 +3299,7 @@ static size_t arm_smmu_unmap(struct iommu_domain *domain, unsigned long iova,
 	arm_smmu_rpm_get(smmu);
 	spin_lock_irqsave(&smmu_domain->cb_lock, flags);
 	ret = ops->unmap(ops, iova, size, gather);
+	arm_smmu_deferred_flush(smmu_domain);
 	spin_unlock_irqrestore(&smmu_domain->cb_lock, flags);
 	arm_smmu_rpm_put(smmu);
 
@@ -3416,6 +3417,7 @@ static size_t arm_smmu_map_sg(struct iommu_domain *domain, unsigned long iova,
 			spin_lock_irqsave(&smmu_domain->cb_lock, flags);
 			list_splice_init(&nonsecure_pool,
 					 &smmu_domain->nonsecure_pool);
+			arm_smmu_deferred_flush(smmu_domain);
 			ret = pgtbl_info->map_sg(ops, iova, sg_start,
 						 idx_end - idx_start, prot,
 						 &size);

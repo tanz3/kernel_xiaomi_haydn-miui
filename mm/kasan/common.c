@@ -470,7 +470,8 @@ static bool __kasan_slab_free(struct kmem_cache *cache, void *object,
 
 	kasan_set_free_info(cache, object, tag);
 
-	quarantine_put(get_free_info(cache, object), cache);
+	if (!quarantine_put(get_free_info(cache, object), cache))
+		return false;
 
 	return IS_ENABLED(CONFIG_KASAN_GENERIC);
 }

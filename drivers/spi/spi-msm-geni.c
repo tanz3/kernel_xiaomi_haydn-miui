@@ -23,7 +23,7 @@
 #include <soc/qcom/boot_stats.h>
 
 #define SPI_NUM_CHIPSELECT	(4)
-#define SPI_XFER_TIMEOUT_MS	(250)
+#define SPI_XFER_TIMEOUT_MS	(1500)
 #define SPI_AUTO_SUSPEND_DELAY	(250)
 /* SPI SE specific registers */
 #define SE_SPI_CPHA		(0x224)
@@ -1042,25 +1042,6 @@ static int spi_geni_prepare_message(struct spi_master *spi,
 					"%s failed: %d\n", __func__, ret);
 				return ret;
 			}
-		}
-	}
-
-	if (pm_runtime_status_suspended(mas->dev) && !mas->is_le_vm) {
-		if (!pm_runtime_enabled(mas->dev)) {
-			GENI_SE_ERR(mas->ipc, false, NULL,
-				"%s: System suspended\n", __func__);
-			return -EACCES;
-		}
-
-		ret = pm_runtime_get_sync(mas->dev);
-		if (ret < 0) {
-			dev_err(mas->dev,
-			"%s:pm_runtime_get_sync failed %d\n", __func__, ret);
-			WARN_ON_ONCE(1);
-			pm_runtime_put_noidle(mas->dev);
-			/* Set device in suspended since resume failed */
-			pm_runtime_set_suspended(mas->dev);
-			return ret;
 		}
 	}
 
@@ -2311,13 +2292,21 @@ static int spi_geni_suspend(struct device *dev)
 	struct spi_geni_master *geni_mas = spi_master_get_devdata(spi);
 
 	if (!pm_runtime_status_suspended(dev)) {
-		GENI_SE_ERR(geni_mas->ipc, true, dev,
-			":%s: runtime PM is active\n", __func__);
-		ret = -EBUSY;
-		return ret;
+		if (list_empty(&spi->queue) && !spi->cur_msg) {
+			GENI_SE_ERR(geni_mas->ipc, true, dev,"%s: Force suspend", __func__);
+			ret = spi_geni_runtime_suspend(dev);
+			if (ret) {
+				GENI_SE_ERR(geni_mas->ipc, true, dev,"Force suspend Failed:%d", ret);
+			} else {
+				pm_runtime_disable(dev);
+				pm_runtime_set_suspended(dev);
+				pm_runtime_enable(dev);
+			}
+		} else {
+			ret = -EBUSY;
+		}
 	}
 
-	GENI_SE_ERR(geni_mas->ipc, true, dev, ":%s: End\n", __func__);
 	return ret;
 }
 #else

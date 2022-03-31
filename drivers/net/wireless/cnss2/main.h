@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Copyright (c) 2016-2020, The Linux Foundation. All rights reserved. */
+/* Copyright (c) 2016-2021, The Linux Foundation. All rights reserved. */
 
 #ifndef _CNSS_MAIN_H
 #define _CNSS_MAIN_H
@@ -9,11 +9,15 @@
 #include <linux/esoc_client.h>
 #endif
 #include <linux/etherdevice.h>
+#if IS_ENABLED(CONFIG_INTERCONNECT)
 #include <linux/interconnect.h>
+#endif
 #include <linux/pm_qos.h>
 #include <linux/platform_device.h>
 #include <net/cnss2.h>
+#if IS_ENABLED(CONFIG_QCOM_MEMORY_DUMP_V2)
 #include <soc/qcom/memory_dump.h>
+#endif
 #if IS_ENABLED(CONFIG_MSM_SUBSYSTEM_RESTART) || \
 	IS_ENABLED(CONFIG_SUBSYSTEM_RAMDUMP)
 #include <soc/qcom/ramdump.h>
@@ -37,7 +41,8 @@
 #define TIME_CLOCK_FREQ_HZ		19200000
 #define CNSS_RAMDUMP_MAGIC		0x574C414E
 #define CNSS_RAMDUMP_VERSION		0
-#define MAX_FIRMWARE_NAME_LEN		20
+#define MAX_FIRMWARE_NAME_LEN		40
+#define FW_V2_NUMBER                    2
 
 #define CNSS_EVENT_SYNC   BIT(0)
 #define CNSS_EVENT_UNINTERRUPTIBLE BIT(1)
@@ -49,6 +54,7 @@
 enum cnss_dev_bus_type {
 	CNSS_BUS_NONE = -1,
 	CNSS_BUS_PCI,
+	CNSS_BUS_USB,
 };
 
 struct cnss_vreg_cfg {
@@ -90,6 +96,8 @@ struct cnss_pinctrl_info {
 	struct pinctrl_state *wlan_en_active;
 	struct pinctrl_state *wlan_en_sleep;
 	int bt_en_gpio;
+	int xo_clk_gpio; /*qca6490 only */
+	int sw_ctrl_gpio;
 };
 
 #if IS_ENABLED(CONFIG_MSM_SUBSYSTEM_RESTART)
@@ -105,7 +113,9 @@ struct cnss_ramdump_info {
 	unsigned long ramdump_size;
 	void *ramdump_va;
 	phys_addr_t ramdump_pa;
+#if IS_ENABLED(CONFIG_QCOM_MEMORY_DUMP_V2)
 	struct msm_dump_data dump_data;
+#endif
 };
 
 struct cnss_dump_seg {
@@ -141,6 +151,7 @@ struct cnss_esoc_info {
 };
 #endif
 
+#if IS_ENABLED(CONFIG_INTERCONNECT)
 /**
  * struct cnss_bus_bw_cfg - Interconnect vote data
  * @avg_bw: Vote for average bandwidth
@@ -167,6 +178,7 @@ struct cnss_bus_bw_info {
 	struct icc_path *icc_path;
 	struct cnss_bus_bw_cfg *cfg_table;
 };
+#endif
 
 /**
  * struct cnss_interconnect_cfg - CNSS platform interconnect config
@@ -261,6 +273,7 @@ enum cnss_driver_event_type {
 	CNSS_DRIVER_EVENT_QDSS_TRACE_REQ_MEM,
 	CNSS_DRIVER_EVENT_FW_MEM_FILE_SAVE,
 	CNSS_DRIVER_EVENT_QDSS_TRACE_FREE,
+	CNSS_DRIVER_EVENT_QDSS_TRACE_REQ_DATA,
 	CNSS_DRIVER_EVENT_MAX,
 };
 
@@ -331,7 +344,7 @@ enum cnss_bdf_type {
 	CNSS_BDF_BIN,
 	CNSS_BDF_ELF,
 	CNSS_BDF_REGDB = 4,
-	CNSS_BDF_DUMMY = 255,
+	CNSS_BDF_HDS = 6,
 };
 
 enum cnss_cal_status {
@@ -383,6 +396,7 @@ enum cnss_ce_index {
 
 struct cnss_dms_data {
 	u32 mac_valid;
+	u8 nv_mac_not_prov;
 	u8 mac[QMI_WLFW_MAC_ADDR_SIZE_V01];
 };
 
@@ -392,6 +406,8 @@ enum cnss_timeout_type {
 	CNSS_TIMEOUT_IDLE_RESTART,
 	CNSS_TIMEOUT_CALIBRATION,
 	CNSS_TIMEOUT_WLAN_WATCHDOG,
+	CNSS_TIMEOUT_RDDM,
+	CNSS_TIMEOUT_RECOVERY,
 };
 
 struct cnss_plat_data {
@@ -416,10 +432,12 @@ struct cnss_plat_data {
 	struct cnss_platform_cap cap;
 	struct pm_qos_request qos_request;
 	struct cnss_device_version device_version;
+	u32 rc_num;
 	unsigned long device_id;
 	enum cnss_driver_status driver_status;
 	u32 recovery_count;
 	u8 recovery_enabled;
+	u8 hds_enabled;
 	unsigned long driver_state;
 	struct list_head event_list;
 	spinlock_t event_lock; /* spinlock for driver work event handling */
@@ -432,6 +450,7 @@ struct cnss_plat_data {
 	struct wlfw_rf_board_info board_info;
 	struct wlfw_soc_info soc_info;
 	struct wlfw_fw_version_info fw_version_info;
+	struct cnss_dev_mem_info dev_mem_info[CNSS_MAX_DEV_MEM_NUM];
 	char fw_build_id[QMI_WLFW_MAX_BUILD_ID_LEN + 1];
 	u32 otp_version;
 	u32 fw_mem_seg_len;
@@ -479,6 +498,11 @@ struct cnss_plat_data {
 	bool fw_pcie_gen_switch;
 	u8 pcie_gen_speed;
 	struct cnss_dms_data dms;
+	int power_up_error;
+	u32 hw_trc_override;
+	u32 is_converged_dt;
+	struct device_node *dev_node;
+	u64 feature_list;
 };
 
 #ifdef CONFIG_ARCH_QCOM
@@ -502,6 +526,8 @@ static inline u64 cnss_get_host_timestamp(struct cnss_plat_data *plat_priv)
 #endif
 
 struct cnss_plat_data *cnss_get_plat_priv(struct platform_device *plat_dev);
+void cnss_pm_stay_awake(struct cnss_plat_data *plat_priv);
+void cnss_pm_relax(struct cnss_plat_data *plat_priv);
 int cnss_driver_event_post(struct cnss_plat_data *plat_priv,
 			   enum cnss_driver_event_type type,
 			   u32 flags, void *data);
@@ -542,5 +568,14 @@ int cnss_enable_int_pow_amp_vreg(struct cnss_plat_data *plat_priv);
 int cnss_get_tcs_info(struct cnss_plat_data *plat_priv);
 unsigned int cnss_get_timeout(struct cnss_plat_data *plat_priv,
 			      enum cnss_timeout_type);
-
+int cnss_dev_specific_power_on(struct cnss_plat_data *plat_priv);
+int cnss_request_firmware_direct(struct cnss_plat_data *plat_priv,
+				 const struct firmware **fw_entry,
+				 const char *filename);
+void cnss_disable_redundant_vreg(struct cnss_plat_data *plat_priv);
+int cnss_gpio_get_value(struct cnss_plat_data *plat_priv, int gpio_num);
+int cnss_set_feature_list(struct cnss_plat_data *plat_priv,
+			  enum cnss_feature_v01 feature);
+int cnss_get_feature_list(struct cnss_plat_data *plat_priv,
+			  u64 *feature_list);
 #endif /* _CNSS_MAIN_H */

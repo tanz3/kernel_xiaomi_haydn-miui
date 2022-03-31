@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MIT
  * Copyright (C) 2018 Intel Corp.
+ * Copyright (C) 2021 XiaoMi, Inc.
  *
  * Authors:
  * Manasi Navare <manasi.d.navare@intel.com>

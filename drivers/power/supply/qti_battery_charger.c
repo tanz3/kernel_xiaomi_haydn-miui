@@ -267,6 +267,7 @@ enum xm_property_id {
 	XM_PROP_UVDM_STATE,
 	/*****************/
 	XM_PROP_WLS_BIN,
+	XM_PROP_TEMP,
 	XM_PROP_FASTCHGMODE,
 	XM_PROP_APDO_MAX,
 	XM_PROP_THERMAL_REMOVE,

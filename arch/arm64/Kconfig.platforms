@@ -399,4 +399,54 @@ config ARCH_SA2150P
 	  If you do not wish to build a kernel that runs on this chipset,
 	  say 'N' here.
 
+menu "Xiaomi Family"
+config BOARD_XIAOMI
+	bool "Xiaomi Family"
+	help
+	  This enables support for XiaoMi Family devices.
+
+if BOARD_XIAOMI
+config BOARD_XIAOMI_SM8350
+	bool "Xiaomi SM8350 Board"
+	select ARCH_QCOM
+	select ARCH_LAHAINA
+
+config BOARD_CETUS
+	bool "Cetus platform"
+	select BOARD_XIAOMI_SM8350
+	help
+	  This enables support for Xiaomi MIX Fold.
+
+config BOARD_HAYDN
+	bool "Haydn and HaydnIN platform"
+	select BOARD_XIAOMI_SM8350
+	help
+	  This enables support for Xiaomi Redmi K40 Pro / POCO F3 Pro / MI 11x Pro.
+
+config BOARD_MARS
+	bool "Mars platform"
+	select BOARD_XIAOMI_SM3250
+	help
+	  This enables support for Xiaomi MI 11 Pro.
+
+config BOARD_ODIN
+	bool "Odin platform"
+	select BOARD_XIAOMI_SM8350
+	help
+	  This enables support for Xiaomi MIX 4.
+
+config BOARD_STAR
+	bool "Star platform"
+	select BOARD_XIAOMI_SM8350
+	help
+	  This enables support for Xiaomi MI 11 Ultra.
+
+config BOARD_VENUS
+	bool "Venus platform"
+	select BOARD_XIAOMI_SM8350
+	help
+	  This enables support for Xiaomi MI 11.
+
+endif
+endmenu
 endmenu

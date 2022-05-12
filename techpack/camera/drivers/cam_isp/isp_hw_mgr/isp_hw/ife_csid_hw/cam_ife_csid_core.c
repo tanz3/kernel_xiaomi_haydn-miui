@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2021 XiaoMi, Inc.
  */
 
 #include <linux/iopoll.h>
@@ -701,20 +702,19 @@ int cam_ife_csid_cid_reserve(struct cam_ife_csid_hw *csid_hw,
 	struct cam_csid_soc_private *soc_priv;
 
 	CAM_DBG(CAM_ISP,
-		"CSID:%d res_sel:0x%x Lane type:%d lane_num:%d dt:%d vc:%d cust_node:%u",
+		"CSID:%d res_sel:0x%x Lane type:%d lane_num:%d dt:%d vc:%d",
 		csid_hw->hw_intf->hw_idx,
 		cid_reserv->in_port->res_type,
 		cid_reserv->in_port->lane_type,
 		cid_reserv->in_port->lane_num,
 		cid_reserv->in_port->dt[0],
-		cid_reserv->in_port->vc[0],
-		cid_reserv->in_port->cust_node);
+		cid_reserv->in_port->vc[0]);
 
 	soc_priv = (struct cam_csid_soc_private *)
 		(csid_hw->hw_info->soc_info.soc_private);
 
 	if (soc_priv->is_ife_csid_lite && !cid_reserv->can_use_lite) {
-		CAM_DBG(CAM_ISP, "CSID[%u] not lite context",
+		CAM_INFO(CAM_ISP, "CSID[%u] not lite context",
 			csid_hw->hw_intf->hw_idx);
 		return -EINVAL;
 	}
@@ -831,10 +831,8 @@ int cam_ife_csid_cid_reserve(struct cam_ife_csid_hw *csid_hw,
 			if (cid_reserv->in_port->cust_node ==
 				CAM_ISP_ACQ_CUSTOM_PRIMARY) {
 				if (csid_hw->hw_intf->hw_idx != 0) {
-					CAM_ERR(CAM_ISP,
-						"CSID%d not eligible for cust_node: %u",
-						csid_hw->hw_intf->hw_idx,
-						cid_reserv->in_port->cust_node);
+					CAM_ERR(CAM_ISP, "CSID%d not eligible",
+						csid_hw->hw_intf->hw_idx);
 					rc = -EINVAL;
 					goto end;
 				}
@@ -843,10 +841,8 @@ int cam_ife_csid_cid_reserve(struct cam_ife_csid_hw *csid_hw,
 			if (cid_reserv->in_port->cust_node ==
 				CAM_ISP_ACQ_CUSTOM_SECONDARY) {
 				if (csid_hw->hw_intf->hw_idx != 1) {
-					CAM_ERR(CAM_ISP,
-						"CSID%d not eligible for cust_node: %u",
-						csid_hw->hw_intf->hw_idx,
-						cid_reserv->in_port->cust_node);
+					CAM_ERR(CAM_ISP, "CSID%d not eligible",
+						csid_hw->hw_intf->hw_idx);
 					rc = -EINVAL;
 					goto end;
 				}
@@ -873,6 +869,7 @@ int cam_ife_csid_cid_reserve(struct cam_ife_csid_hw *csid_hw,
 			cid_reserv->in_port->lane_type ||
 			csid_hw->csi2_rx_cfg.lane_num !=
 			cid_reserv->in_port->lane_num)) {
+
 			rc = -EINVAL;
 			goto end;
 		}
@@ -886,6 +883,7 @@ int cam_ife_csid_cid_reserve(struct cam_ife_csid_hw *csid_hw,
 			cid_reserv->in_port->height     ||
 			csid_hw->tpg_cfg.test_pattern !=
 			cid_reserv->in_port->test_pattern)) {
+
 			rc = -EINVAL;
 			goto end;
 		}
@@ -965,7 +963,6 @@ int cam_ife_csid_cid_reserve(struct cam_ife_csid_hw *csid_hw,
 	cid_data = (struct cam_ife_csid_cid_data *)
 		cid_reserv->node_res->res_priv;
 
-	CAM_DBG(CAM_ISP, "Obtained cid:%d", cid_reserv->node_res->res_id);
 	if (!csid_hw->csi2_reserve_cnt) {
 		csid_hw->res_type = cid_reserv->in_port->res_type;
 
@@ -1033,10 +1030,9 @@ int cam_ife_csid_cid_reserve(struct cam_ife_csid_hw *csid_hw,
 	}
 
 	csid_hw->csi2_reserve_cnt++;
-	CAM_DBG(CAM_ISP, "CSID:%d CID:%d acquired phy_sel %u",
+	CAM_DBG(CAM_ISP, "CSID:%d CID:%d acquired",
 		csid_hw->hw_intf->hw_idx,
-		cid_reserv->node_res->res_id,
-		csid_hw->csi2_rx_cfg.phy_sel);
+		cid_reserv->node_res->res_id);
 
 end:
 	return rc;
@@ -1337,7 +1333,7 @@ int cam_ife_csid_path_reserve(struct cam_ife_csid_hw *csid_hw,
 	default:
 		path_data->dt = reserve->in_port->dt[0];
 		path_data->vc = reserve->in_port->vc[0];
-		if (reserve->in_port->num_valid_vc_dt) {
+		if (reserve->in_port->num_valid_vc_dt > 1) {
 			path_data->dt1 = reserve->in_port->dt[1];
 			path_data->vc1 = reserve->in_port->vc[1];
 			path_data->is_valid_vc1_dt1 = 1;
@@ -2618,6 +2614,11 @@ static int cam_ife_csid_init_config_rdi_path(
 			csid_reg->rdi_reg[id]->csid_rdi_multi_vcdt_cfg0_addr);
 		val |= ((path_data->vc1 << 2) |
 			(path_data->dt1 << 7) | 1);
+
+		cam_io_w_mb(val, soc_info->reg_map[0].mem_base +
+			csid_reg->rdi_reg[id]->csid_rdi_multi_vcdt_cfg0_addr);
+		CAM_DBG(CAM_ISP, "multi vcdt enabled: vc1 %d, dt1 %d, val %d",
+		path_data->vc1, path_data->dt1, val);
 	}
 
 	/* select the post irq sub sample strobe for time stamp capture */
@@ -3725,10 +3726,9 @@ int cam_ife_csid_release(void *hw_priv,
 			memset(&csid_hw->csi2_rx_cfg, 0,
 				sizeof(struct cam_ife_csid_csi2_rx_cfg));
 
-		CAM_DBG(CAM_ISP, "CSID:%d res id :%d cnt:%d reserv cnt:%d res_state:%d",
+		CAM_DBG(CAM_ISP, "CSID:%d res id :%d cnt:%d reserv cnt:%d",
 			 csid_hw->hw_intf->hw_idx,
-			res->res_id, cid_data->cnt, csid_hw->csi2_reserve_cnt,
-			res->res_state);
+			res->res_id, cid_data->cnt, csid_hw->csi2_reserve_cnt);
 
 		break;
 	case CAM_ISP_RESOURCE_PIX_PATH:
@@ -5247,9 +5247,6 @@ handle_fatal_error:
 			CSID_PATH_ERROR_LINE_COUNT)) {
 			val = cam_io_r_mb(soc_info->reg_map[0].mem_base +
 			csid_reg->ipp_reg->csid_pxl_format_measure0_addr);
-			val2 = cam_io_r_mb(soc_info->reg_map[0].mem_base +
-			csid_reg->ipp_reg->csid_pxl_format_measure_cfg1_addr
-			);
 
 			CAM_ERR(CAM_ISP,
 				"CSID:%d irq_status_ipp:0x%x",
@@ -5257,11 +5254,8 @@ handle_fatal_error:
 				irq_status[CAM_IFE_CSID_IRQ_REG_IPP]);
 			CAM_ERR(CAM_ISP,
 			"Expected:: h: 0x%x w: 0x%x actual:: h: 0x%x w: 0x%x [format_measure0: 0x%x]",
-			((val2 >>
-			csid_reg->cmn_reg->format_measure_height_shift_val) &
-			csid_reg->cmn_reg->format_measure_height_mask_val),
-			val2 &
-			csid_reg->cmn_reg->format_measure_width_mask_val,
+			csid_hw->ipp_path_config.height,
+			csid_hw->ipp_path_config.width,
 			((val >>
 			csid_reg->cmn_reg->format_measure_height_shift_val) &
 			csid_reg->cmn_reg->format_measure_height_mask_val),
@@ -5330,9 +5324,6 @@ handle_fatal_error:
 			CSID_PATH_ERROR_LINE_COUNT)) {
 			val = cam_io_r_mb(soc_info->reg_map[0].mem_base +
 			csid_reg->ppp_reg->csid_pxl_format_measure0_addr);
-			val2 = cam_io_r_mb(soc_info->reg_map[0].mem_base +
-			csid_reg->ppp_reg->csid_pxl_format_measure_cfg1_addr
-			);
 
 			CAM_ERR(CAM_ISP,
 				"CSID:%d irq_status_ppp:0x%x",
@@ -5340,11 +5331,8 @@ handle_fatal_error:
 				irq_status[CAM_IFE_CSID_IRQ_REG_PPP]);
 			CAM_ERR(CAM_ISP,
 			"Expected:: h:  0x%x w: 0x%x actual:: h: 0x%x w: 0x%x [format_measure0: 0x%x]",
-			((val2 >>
-			csid_reg->cmn_reg->format_measure_height_shift_val) &
-			csid_reg->cmn_reg->format_measure_height_mask_val),
-			val2 &
-			csid_reg->cmn_reg->format_measure_width_mask_val,
+			csid_hw->ppp_path_config.height,
+			csid_hw->ppp_path_config.width,
 			((val >>
 			csid_reg->cmn_reg->format_measure_height_shift_val) &
 			csid_reg->cmn_reg->format_measure_height_mask_val),

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2021 XiaoMi, Inc.
  */
 
 #include <linux/slab.h>
@@ -740,12 +741,6 @@ static void cam_ife_hw_mgr_dump_all_ctx(void)
 	struct cam_ife_hw_mgr_ctx       *ctx_temp;
 
 	mutex_lock(&g_ife_hw_mgr.ctx_mutex);
-	if (list_empty(&g_ife_hw_mgr.used_ctx_list)) {
-		CAM_INFO(CAM_ISP, "Currently no ctx in use");
-		mutex_unlock(&g_ife_hw_mgr.ctx_mutex);
-		return;
-	}
-
 	list_for_each_entry_safe(ctx, ctx_temp,
 		&g_ife_hw_mgr.used_ctx_list, list) {
 		CAM_INFO_RATE_LIMIT(CAM_ISP,
@@ -803,15 +798,17 @@ static void cam_ife_hw_mgr_print_acquire_info(
 	int hw_idx[CAM_ISP_HW_SPLIT_MAX] = {-1, -1};
 	int i = 0;
 
-	if (!list_empty(&hw_mgr_ctx->res_list_ife_src)) {
+	hw_mgr_res = list_first_entry(&hw_mgr_ctx->res_list_ife_csid,
+		struct cam_isp_hw_mgr_res, list);
+
+	if (hw_mgr_ctx->is_offline)
 		hw_mgr_res = list_first_entry(&hw_mgr_ctx->res_list_ife_src,
 			struct cam_isp_hw_mgr_res, list);
 
-		for (i = 0; i < CAM_ISP_HW_SPLIT_MAX; i++) {
-			hw_res = hw_mgr_res->hw_res[i];
-			if (hw_res && hw_res->hw_intf)
-				hw_idx[i] = hw_res->hw_intf->hw_idx;
-		}
+	for (i = 0; i < CAM_ISP_HW_SPLIT_MAX; i++) {
+		hw_res = hw_mgr_res->hw_res[i];
+		if (hw_res && hw_res->hw_intf)
+			hw_idx[i] = hw_res->hw_intf->hw_idx;
 	}
 
 	if (acquire_failed)
@@ -826,12 +823,12 @@ static void cam_ife_hw_mgr_print_acquire_info(
 	return;
 
 fail:
-	CAM_ERR(CAM_ISP,
-		"Failed to acquire %s-IFE with [%u pix] [%u pd] [%u rdi] ports for ctx:%u",
-		(hw_mgr_ctx->is_dual) ? "dual" : "single",
-		num_pix_port, num_pd_port, num_rdi_port, hw_mgr_ctx->ctx_index);
-	CAM_INFO(CAM_ISP, "Previously acquired IFEs[%d %d]",
-		hw_idx[CAM_ISP_HW_SPLIT_LEFT], hw_idx[CAM_ISP_HW_SPLIT_RIGHT]);
+	CAM_ERR(CAM_ISP, "Acquire HW failed for ctx:%u", hw_mgr_ctx->ctx_index);
+	CAM_INFO(CAM_ISP,
+		"Acquire fail for ctx:%u %s IFE[%d %d] with [%u pix] [%u pd] [%u rdi] ports",
+		hw_mgr_ctx->ctx_index, (hw_mgr_ctx->is_dual) ? "dual" : "single",
+		hw_idx[CAM_ISP_HW_SPLIT_LEFT], hw_idx[CAM_ISP_HW_SPLIT_RIGHT],
+		num_pix_port, num_pd_port, num_rdi_port);
 
 	list_for_each_entry_safe(hw_mgr_res, hw_mgr_res_temp,
 		&hw_mgr_ctx->res_list_ife_src, list) {
@@ -1713,7 +1710,6 @@ static int cam_ife_hw_mgr_acquire_csid_hw(
 		return -EINVAL;
 	}
 
-	CAM_DBG(CAM_ISP, "Acquire CSID HW lower_idx: %d", is_start_lower_idx);
 	if (is_start_lower_idx) {
 		for (i =  0; i < CAM_IFE_CSID_HW_NUM_MAX; i++) {
 			if (!ife_hw_mgr->csid_devices[i])
@@ -1775,7 +1771,6 @@ static int cam_ife_mgr_acquire_cid_res(
 	csid_acquire.res_type = CAM_ISP_RESOURCE_CID;
 	csid_acquire.in_port = in_port;
 	csid_acquire.res_id =  path_res_id;
-	csid_acquire.node_res = NULL;
 
 	if (ife_ctx->is_rdi_only_context)
 		csid_acquire.can_use_lite = true;
@@ -1849,12 +1844,8 @@ static int cam_ife_mgr_acquire_cid_res(
 		}
 	}
 
-	/* Acquire Left if not already acquired */
-	/* For dual IFE cases, start acquiring the lower idx first */
-	CAM_DBG(CAM_ISP, "acquire new rsrc fe: %d usage_type %d dsp %d rsrc %p",
-		ife_ctx->is_fe_enabled, in_port->usage_type,
-		ife_ctx->dsp_enabled, csid_acquire.node_res);
-
+	/* Acquire right if not already acquired */
+	/* For dual IFE cases, master will be lower idx */
 	if (ife_ctx->is_fe_enabled ||
 		ife_ctx->dsp_enabled)
 		rc = cam_ife_hw_mgr_acquire_csid_hw(ife_hw_mgr,
@@ -1864,8 +1855,7 @@ static int cam_ife_mgr_acquire_cid_res(
 			&csid_acquire, false);
 
 	if (rc || !csid_acquire.node_res) {
-		CAM_ERR(CAM_ISP, "No %d paths available rc %d rsrc %p",
-			path_res_id, rc, csid_acquire.node_res);
+		CAM_ERR(CAM_ISP, "No %d paths available", path_res_id);
 		goto put_res;
 	}
 
@@ -2732,7 +2722,6 @@ static int cam_ife_mgr_acquire_hw_for_ctx(
 
 	is_dual_isp = in_port->usage_type;
 	ife_ctx->dsp_enabled = (bool)in_port->dsp_mode;
-	ife_ctx->is_dual = (bool)in_port->usage_type;
 
 	/* get root node resource */
 	rc = cam_ife_hw_mgr_acquire_res_root(ife_ctx, in_port);
@@ -3147,7 +3136,6 @@ static int cam_ife_mgr_acquire_hw(void *hw_mgr_priv, void *acquire_hw_args)
 			CAM_ERR(CAM_ISP, "Failed in parsing: %d", rc);
 			goto free_mem;
 		}
-		CAM_DBG(CAM_ISP, "in_res_type %x", in_port->res_type);
 
 		cam_ife_hw_mgr_preprocess_port(ife_ctx, &in_port[i]);
 		total_pix_port += in_port[i].ipp_count +
@@ -3165,6 +3153,7 @@ static int cam_ife_mgr_acquire_hw(void *hw_mgr_priv, void *acquire_hw_args)
 
 	/* acquire HW resources */
 	for (i = 0; i < acquire_hw_info->num_inputs; i++) {
+
 		CAM_DBG(CAM_ISP, "in_res_type %x", in_port[i].res_type);
 
 		if ((in_port[i].cust_node) && (!ife_ctx->custom_enabled)) {
@@ -3200,11 +3189,8 @@ static int cam_ife_mgr_acquire_hw(void *hw_mgr_priv, void *acquire_hw_args)
 
 		if (rc) {
 			cam_ife_hw_mgr_print_acquire_info(ife_ctx,
-				(in_port[i].ipp_count +
-				in_port[i].ife_rd_count +
-				in_port[i].lcr_count),
-				in_port[i].ppp_count,
-				in_port[i].rdi_count, rc);
+				total_pix_port, total_pd_port,
+				total_rdi_port, rc);
 			goto free_res;
 		}
 
@@ -4017,7 +4003,7 @@ static int cam_ife_mgr_config_hw(void *hw_mgr_priv,
 			(ctx->custom_config & CAM_IFE_CUSTOM_CFG_SW_SYNC_ON)) {
 			rem_jiffies = wait_for_completion_timeout(
 				&ctx->config_done_complete,
-				msecs_to_jiffies(60));
+				msecs_to_jiffies(120)); // xiaomi modified to enlarge cfg timeout
 			if (rem_jiffies == 0) {
 				CAM_ERR(CAM_ISP,
 					"config done completion timeout for req_id=%llu ctx_index %d",
@@ -6482,7 +6468,6 @@ static int cam_ife_mgr_prepare_hw_update(void *hw_mgr_priv,
 			return rc;
 
 		frame_header_enable = true;
-		prepare_hw_data->frame_header_res_id = 0x0;
 	}
 
 	if (ctx->internal_cdm)
@@ -6586,14 +6571,6 @@ static int cam_ife_mgr_prepare_hw_update(void *hw_mgr_priv,
 				prepare_hw_data->frame_header_res_id,
 				prepare_hw_data->frame_header_cpu_addr);
 		}
-	}
-
-	/* Check if frame header was enabled for any WM */
-	if ((ctx->custom_config & CAM_IFE_CUSTOM_CFG_FRAME_HEADER_TS) &&
-		(prepare->num_out_map_entries) &&
-		(!prepare_hw_data->frame_header_res_id)) {
-		CAM_ERR(CAM_ISP, "Failed to configure frame header");
-		goto end;
 	}
 
 	/*

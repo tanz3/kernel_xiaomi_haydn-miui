@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2021 XiaoMi, Inc.
  */
 
 #include <linux/module.h>
@@ -5691,6 +5692,9 @@ static int dwc3_msm_gadget_vbus_draw(struct dwc3_msm *mdwc, unsigned int mA)
 		return 0;
 
 	if (mdwc->apsd_source == IIO && chg_type != POWER_SUPPLY_TYPE_USB)
+		return 0;
+
+	if (mA < 100)
 		return 0;
 
 	/* Set max current limit in uA */

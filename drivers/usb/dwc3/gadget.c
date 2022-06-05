@@ -1949,6 +1949,9 @@ int __dwc3_gadget_ep_set_halt(struct dwc3_ep *dep, int value, int protocol)
 
 			if (dep->flags & DWC3_EP_END_TRANSFER_PENDING) {
 				dep->flags |= DWC3_EP_PENDING_CLEAR_STALL;
+				if (protocol)
+					dwc->clear_stall_protocol = dep->number;
+
 				return 0;
 			}
 		}
@@ -3500,7 +3503,7 @@ static void dwc3_endpoint_interrupt(struct dwc3 *dwc,
 				}
 
 				dep->flags &= ~(DWC3_EP_STALL | DWC3_EP_WEDGE);
-				if (dwc->delayed_status)
+				if (dwc->clear_stall_protocol == dep->number)
 					dwc3_ep0_send_delayed_status(dwc);
 			}
 

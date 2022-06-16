@@ -24,6 +24,7 @@ config I8253_LOCK
 
 config OMAP_DM_TIMER
 	bool
+	select TIMER_OF
 
 config CLKBLD_I8253
 	def_bool y if CLKSRC_I8253 || CLKEVT_I8253 || I8253_LOCK
@@ -79,6 +80,7 @@ config IXP4XX_TIMER
 	bool "Intel XScale IXP4xx timer driver" if COMPILE_TEST
 	depends on HAS_IOMEM
 	select CLKSRC_MMIO
+	select TIMER_OF if OF
 	help
 	  Enables support for the Intel XScale IXP4xx SoC timer.
 
@@ -384,14 +386,6 @@ config SUN50I_ERRATUM_UNKNOWN1
 	  This option enables a workaround for instability in the timer on
 	  the Allwinner A64 SoC. The workaround will only be active if the
 	  allwinner,erratum-unknown1 property is found in the timer node.
-
-config ARM_ARCH_TIMER_VCT_ACCESS
-	bool "Support for ARM architected timer virtual counter access in userspace"
-	default n
-	depends on ARM_ARCH_TIMER
-	help
-	  This option enables support for reading the ARM architected timer's
-	  virtual counter in userspace.
 
 config ARM_GLOBAL_TIMER
 	bool "Support for the ARM global timer" if COMPILE_TEST

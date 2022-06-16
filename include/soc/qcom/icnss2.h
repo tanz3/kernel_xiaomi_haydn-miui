@@ -20,6 +20,11 @@ enum icnss_uevent {
 	ICNSS_UEVENT_FW_CRASHED,
 	ICNSS_UEVENT_FW_DOWN,
 	ICNSS_UEVENT_HANG_DATA,
+	ICNSS_UEVENT_SMMU_FAULT,
+};
+
+enum icnss_device_config {
+	ICNSS_IPA_DISABLED,
 };
 
 struct icnss_uevent_hang_data {
@@ -195,4 +200,5 @@ extern int icnss_prevent_l1(struct device *dev);
 extern void icnss_allow_l1(struct device *dev);
 extern int icnss_get_mhi_state(struct device *dev);
 extern int icnss_is_pci_ep_awake(struct device *dev);
+extern unsigned long icnss_get_device_config(void);
 #endif /* _ICNSS_WLAN_H_ */

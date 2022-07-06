@@ -76,8 +76,6 @@
 #define USBPD_UVDM_SS_LEN		4
 #define USBPD_UVDM_VERIFIED_LEN		1
 
-#define MAX_THERMAL_LEVEL		16
-
 enum uvdm_state {
 	USBPD_UVDM_DISCONNECT,
 	USBPD_UVDM_CHARGER_VERSION,
@@ -5463,8 +5461,8 @@ static int battery_chg_parse_dt(struct battery_chg_dev *bcdev)
 {
 	struct device_node *node = bcdev->dev->of_node;
 	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_BATTERY];
-	int  rc, len;
-	//u32 prev,i, val;
+	int  i, rc, len;
+	u32 prev, val;
 
 	of_property_read_string(node, "qcom,wireless-fw-name",
 				&bcdev->wls_fw_name);
@@ -5475,7 +5473,6 @@ static int battery_chg_parse_dt(struct battery_chg_dev *bcdev)
 		return 0;
 
 	len = rc;
-#if 0
 	rc = read_property_id(bcdev, pst, BATT_CHG_CTRL_LIM_MAX);
 	if (rc < 0) {
 		pr_err("Failed to read prop BATT_CHG_CTRL_LIM_MAX, rc=%d\n",
@@ -5499,7 +5496,6 @@ static int battery_chg_parse_dt(struct battery_chg_dev *bcdev)
 
 		prev = val;
 	}
-#endif
 
 	bcdev->thermal_levels = devm_kcalloc(bcdev->dev, len + 1,
 					sizeof(*bcdev->thermal_levels),
@@ -5521,7 +5517,7 @@ static int battery_chg_parse_dt(struct battery_chg_dev *bcdev)
 		return rc;
 	}
 
-	bcdev->num_thermal_levels = MAX_THERMAL_LEVEL;
+	bcdev->num_thermal_levels = len;
 	bcdev->thermal_fcc_ua = pst->prop[BATT_CHG_CTRL_LIM_MAX];
 
 	bcdev->support_wireless_charge = of_property_read_bool(node, "mi,support-wireless");

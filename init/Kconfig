@@ -469,6 +469,17 @@ config MIMISC_MC
 	---help---
 	  Acct ion/gpu misc memory to memory cgroup
 
+config OEM_KERNEL
+	bool "Oem kernel code"
+	help
+	  This feature will allow oem to add their own changes in kernel code.
+
+config MIHW
+	bool "MI driver"
+	default n
+	help
+	  Mi driver code
+
 config BSD_PROCESS_ACCT
 	bool "BSD Process Accounting"
 	depends on MULTIUSER

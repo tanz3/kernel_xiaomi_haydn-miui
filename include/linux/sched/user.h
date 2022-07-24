@@ -37,12 +37,16 @@ struct user_struct {
     defined(CONFIG_NET) || defined(CONFIG_IO_URING)
 	atomic_long_t locked_vm;
 #endif
+#ifdef CONFIG_WATCH_QUEUE
+	atomic_t nr_watches;	/* The number of watches this user currently has */
+#endif
 
 	/* Miscellaneous per-user rate limit */
 	struct ratelimit_state ratelimit;
 
 	ANDROID_KABI_RESERVE(1);
 	ANDROID_KABI_RESERVE(2);
+	ANDROID_OEM_DATA_ARRAY(1, 2);
 };
 
 extern int uids_sysfs_init(void);

@@ -2,10 +2,11 @@
 /*
  * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
  */
-#include "qc_vas.h"
+
 #include <linux/of.h>
-#include <linux/sched/core_ctl.h>
-#include <trace/events/sched.h>
+
+#include "walt.h"
+#include "trace.h"
 
 /*
  * Scheduler boost is a mechanism to temporarily place tasks on CPUs
@@ -13,51 +14,49 @@
  * ended up with their load characteristics. Any entity enabling
  * boost is responsible for disabling it as well.
  */
-
-unsigned int sysctl_sched_boost; /* To/from userspace */
-unsigned int sched_boost_type; /* currently activated sched boost */
+unsigned int sched_boost_type;
 enum sched_boost_policy boost_policy;
 
-static enum sched_boost_policy boost_policy_dt = SCHED_BOOST_NONE;
 static DEFINE_MUTEX(boost_mutex);
 
-#if defined(CONFIG_UCLAMP_TASK_GROUP)
-void walt_init_sched_boost(struct task_group *tg)
+void walt_init_tg(struct task_group *tg)
 {
-	tg->wtg.sched_boost_no_override = false;
-	tg->wtg.sched_boost_enabled = true;
-	tg->wtg.colocate = false;
-	tg->wtg.colocate_update_disabled = false;
+	struct walt_task_group *wtg;
+
+	wtg = (struct walt_task_group *) tg->android_vendor_data1;
+
+	wtg->colocate = false;
+	wtg->sched_boost_enable[NO_BOOST] = false;
+	wtg->sched_boost_enable[FULL_THROTTLE_BOOST] = true;
+	wtg->sched_boost_enable[CONSERVATIVE_BOOST] = false;
+	wtg->sched_boost_enable[RESTRAINED_BOOST] = false;
 }
 
-static void update_cgroup_boost_settings(void)
+void walt_init_topapp_tg(struct task_group *tg)
 {
-	struct task_group *tg;
+	struct walt_task_group *wtg;
 
-	rcu_read_lock();
-	list_for_each_entry_rcu(tg, &task_groups, list) {
-		if (tg->wtg.sched_boost_no_override)
-			continue;
+	wtg = (struct walt_task_group *) tg->android_vendor_data1;
 
-		tg->wtg.sched_boost_enabled = false;
-	}
-	rcu_read_unlock();
+	wtg->colocate = true;
+	wtg->sched_boost_enable[NO_BOOST] = false;
+	wtg->sched_boost_enable[FULL_THROTTLE_BOOST] = true;
+	wtg->sched_boost_enable[CONSERVATIVE_BOOST] = true;
+	wtg->sched_boost_enable[RESTRAINED_BOOST] = false;
 }
 
-static void restore_cgroup_boost_settings(void)
+void walt_init_foreground_tg(struct task_group *tg)
 {
-	struct task_group *tg;
+	struct walt_task_group *wtg;
 
-	rcu_read_lock();
-	list_for_each_entry_rcu(tg, &task_groups, list)
-		tg->wtg.sched_boost_enabled = true;
-	rcu_read_unlock();
+	wtg = (struct walt_task_group *) tg->android_vendor_data1;
+
+	wtg->colocate = false;
+	wtg->sched_boost_enable[NO_BOOST] = false;
+	wtg->sched_boost_enable[FULL_THROTTLE_BOOST] = true;
+	wtg->sched_boost_enable[CONSERVATIVE_BOOST] = true;
+	wtg->sched_boost_enable[RESTRAINED_BOOST] = false;
 }
-
-#else
-static void update_cgroup_boost_settings(void) { }
-static void restore_cgroup_boost_settings(void) { }
-#endif
 
 /*
  * Scheduler boost type and boost policy might at first seem unrelated,
@@ -74,11 +73,6 @@ static void set_boost_policy(int type)
 {
 	if (type == NO_BOOST || type == RESTRAINED_BOOST) {
 		boost_policy = SCHED_BOOST_NONE;
-		return;
-	}
-
-	if (boost_policy_dt) {
-		boost_policy = boost_policy_dt;
 		return;
 	}
 
@@ -113,12 +107,10 @@ static void sched_full_throttle_boost_exit(void)
 
 static void sched_conservative_boost_enter(void)
 {
-	update_cgroup_boost_settings();
 }
 
 static void sched_conservative_boost_exit(void)
 {
-	restore_cgroup_boost_settings();
 }
 
 static void sched_restrained_boost_enter(void)
@@ -132,31 +124,31 @@ static void sched_restrained_boost_exit(void)
 }
 
 struct sched_boost_data {
-	int refcount;
-	void (*enter)(void);
-	void (*exit)(void);
+	int	refcount;
+	void	(*enter)(void);
+	void	(*exit)(void);
 };
 
 static struct sched_boost_data sched_boosts[] = {
 	[NO_BOOST] = {
-		.refcount = 0,
-		.enter = sched_no_boost_nop,
-		.exit = sched_no_boost_nop,
+		.refcount	= 0,
+		.enter		= sched_no_boost_nop,
+		.exit		= sched_no_boost_nop,
 	},
 	[FULL_THROTTLE_BOOST] = {
-		.refcount = 0,
-		.enter = sched_full_throttle_boost_enter,
-		.exit = sched_full_throttle_boost_exit,
+		.refcount	= 0,
+		.enter		= sched_full_throttle_boost_enter,
+		.exit		= sched_full_throttle_boost_exit,
 	},
 	[CONSERVATIVE_BOOST] = {
-		.refcount = 0,
-		.enter = sched_conservative_boost_enter,
-		.exit = sched_conservative_boost_exit,
+		.refcount	= 0,
+		.enter		= sched_conservative_boost_enter,
+		.exit		= sched_conservative_boost_exit,
 	},
 	[RESTRAINED_BOOST] = {
-		.refcount = 0,
-		.enter = sched_restrained_boost_enter,
-		.exit = sched_restrained_boost_exit,
+		.refcount	= 0,
+		.enter		= sched_restrained_boost_enter,
+		.exit		= sched_restrained_boost_exit,
 	},
 };
 
@@ -264,23 +256,6 @@ static void _sched_set_boost(int type)
 	trace_sched_set_boost(sysctl_sched_boost);
 }
 
-void sched_boost_parse_dt(void)
-{
-	struct device_node *sn;
-	const char *boost_policy;
-
-	sn = of_find_node_by_path("/sched-hmp");
-	if (!sn)
-		return;
-
-	if (!of_property_read_string(sn, "boost-policy", &boost_policy)) {
-		if (!strcmp(boost_policy, "boost-on-big"))
-			boost_policy_dt = SCHED_BOOST_ON_BIG;
-		else if (!strcmp(boost_policy, "boost-on-all"))
-			boost_policy_dt = SCHED_BOOST_ON_ALL;
-	}
-}
-
 int sched_set_boost(int type)
 {
 	int ret = 0;
@@ -316,4 +291,10 @@ int sched_boost_handler(struct ctl_table *table, int write,
 done:
 	mutex_unlock(&boost_mutex);
 	return ret;
+}
+
+void walt_boost_init(void)
+{
+	/* force call the callbacks for default boost */
+	sched_set_boost(FULL_THROTTLE_BOOST);
 }

@@ -8,16 +8,10 @@
  * See kernel/stop_machine.c
  */
 #include "sched.h"
-#include "walt/walt.h"
 
 #ifdef CONFIG_SMP
 static int
-#ifdef CONFIG_SCHED_WALT
-select_task_rq_stop(struct task_struct *p, int cpu, int sd_flag, int flags,
-		    int sibling_count_hint)
-#else
 select_task_rq_stop(struct task_struct *p, int cpu, int sd_flag, int flags)
-#endif
 {
 	return task_cpu(p); /* stop tasks as never migrate */
 }
@@ -40,11 +34,8 @@ static void set_next_task_stop(struct rq *rq, struct task_struct *stop, bool fir
 	stop->se.exec_start = rq_clock_task(rq);
 }
 
-static struct task_struct *
-pick_next_task_stop(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
+static struct task_struct *pick_next_task_stop(struct rq *rq)
 {
-	WARN_ON_ONCE(prev || rf);
-
 	if (!sched_stop_runnable(rq))
 		return NULL;
 
@@ -56,14 +47,12 @@ static void
 enqueue_task_stop(struct rq *rq, struct task_struct *p, int flags)
 {
 	add_nr_running(rq, 1);
-	walt_inc_cumulative_runnable_avg(rq, p);
 }
 
 static void
 dequeue_task_stop(struct rq *rq, struct task_struct *p, int flags)
 {
 	sub_nr_running(rq, 1);
-	walt_dec_cumulative_runnable_avg(rq, p);
 }
 
 static void yield_task_stop(struct rq *rq)
@@ -113,12 +102,6 @@ prio_changed_stop(struct rq *rq, struct task_struct *p, int oldprio)
 	BUG(); /* how!?, what priority? */
 }
 
-static unsigned int
-get_rr_interval_stop(struct rq *rq, struct task_struct *task)
-{
-	return 0;
-}
-
 static void update_curr_stop(struct rq *rq)
 {
 }
@@ -126,8 +109,8 @@ static void update_curr_stop(struct rq *rq)
 /*
  * Simple, special scheduling class for the per-CPU stop tasks:
  */
-const struct sched_class stop_sched_class = {
-	.next			= &dl_sched_class,
+const struct sched_class stop_sched_class
+	__section("__stop_sched_class") = {
 
 	.enqueue_task		= enqueue_task_stop,
 	.dequeue_task		= dequeue_task_stop,
@@ -146,8 +129,6 @@ const struct sched_class stop_sched_class = {
 #endif
 
 	.task_tick		= task_tick_stop,
-
-	.get_rr_interval	= get_rr_interval_stop,
 
 	.prio_changed		= prio_changed_stop,
 	.switched_to		= switched_to_stop,

@@ -3,9 +3,8 @@
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
  */
 
-#include "qc_vas.h"
+#include "walt.h"
 
-#ifdef CONFIG_SCHED_WALT
 static inline void __window_data(u32 *dst, u32 *src)
 {
 	if (src)
@@ -30,30 +29,34 @@ const char *__window_print(struct trace_seq *p, const u32 *buf, int buf_len)
 
 static inline s64 __rq_update_sum(struct rq *rq, bool curr, bool new)
 {
+	struct walt_rq *wrq = (struct walt_rq *) rq->android_vendor_data1;
+
 	if (curr)
 		if (new)
-			return rq->wrq.nt_curr_runnable_sum;
+			return wrq->nt_curr_runnable_sum;
 		else
-			return rq->wrq.curr_runnable_sum;
+			return wrq->curr_runnable_sum;
 	else
 		if (new)
-			return rq->wrq.nt_prev_runnable_sum;
+			return wrq->nt_prev_runnable_sum;
 		else
-			return rq->wrq.prev_runnable_sum;
+			return wrq->prev_runnable_sum;
 }
 
 static inline s64 __grp_update_sum(struct rq *rq, bool curr, bool new)
 {
+	struct walt_rq *wrq = (struct walt_rq *) rq->android_vendor_data1;
+
 	if (curr)
 		if (new)
-			return rq->wrq.grp_time.nt_curr_runnable_sum;
+			return wrq->grp_time.nt_curr_runnable_sum;
 		else
-			return rq->wrq.grp_time.curr_runnable_sum;
+			return wrq->grp_time.curr_runnable_sum;
 	else
 		if (new)
-			return rq->wrq.grp_time.nt_prev_runnable_sum;
+			return wrq->grp_time.nt_prev_runnable_sum;
 		else
-			return rq->wrq.grp_time.prev_runnable_sum;
+			return wrq->grp_time.prev_runnable_sum;
 }
 
 static inline s64
@@ -73,10 +76,9 @@ __get_update_sum(struct rq *rq, enum migrate_types migrate_type,
 			return __rq_update_sum(rq, curr, new);
 	default:
 		WARN_ON_ONCE(1);
-		return -1;
+		return -EINVAL;
 	}
 }
-#endif
+
 #define CREATE_TRACE_POINTS
 #include "trace.h"
-

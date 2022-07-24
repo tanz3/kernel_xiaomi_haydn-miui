@@ -24,7 +24,6 @@
 
 #define MAX_PRIO		(MAX_RT_PRIO + NICE_WIDTH)
 #define DEFAULT_PRIO		(MAX_RT_PRIO + NICE_WIDTH / 2)
-#define MAX_LEVER               3
 
 /*
  * Convert user-nice values [ -20 ... 0 ... 19 ]

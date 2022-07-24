@@ -48,10 +48,11 @@ static unsigned long nsec_low(unsigned long long nsec)
 #define SCHED_FEAT(name, enabled)	\
 	#name ,
 
-static const char * const sched_feat_names[] = {
+const char * const sched_feat_names[] = {
 #include "features.h"
 };
 
+EXPORT_SYMBOL_GPL(sched_feat_names);
 #undef SCHED_FEAT
 
 static int sched_feat_show(struct seq_file *m, void *v)
@@ -79,6 +80,7 @@ static int sched_feat_show(struct seq_file *m, void *v)
 struct static_key sched_feat_keys[__SCHED_FEAT_NR] = {
 #include "features.h"
 };
+EXPORT_SYMBOL_GPL(sched_feat_keys);
 
 #undef SCHED_FEAT
 
@@ -243,6 +245,60 @@ set_table_entry(struct ctl_table *entry,
 	entry->proc_handler = proc_handler;
 }
 
+static int sd_ctl_doflags(struct ctl_table *table, int write,
+			  void *buffer, size_t *lenp, loff_t *ppos)
+{
+	unsigned long flags = *(unsigned long *)table->data;
+	size_t data_size = 0;
+	size_t len = 0;
+	char *tmp, *buf;
+	int idx;
+
+	if (write)
+		return 0;
+
+	for_each_set_bit(idx, &flags, __SD_FLAG_CNT) {
+		char *name = sd_flag_debug[idx].name;
+
+		/* Name plus whitespace */
+		data_size += strlen(name) + 1;
+	}
+
+	if (*ppos > data_size) {
+		*lenp = 0;
+		return 0;
+	}
+
+	buf = kcalloc(data_size + 1, sizeof(*buf), GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	for_each_set_bit(idx, &flags, __SD_FLAG_CNT) {
+		char *name = sd_flag_debug[idx].name;
+
+		len += snprintf(buf + len, strlen(name) + 2, "%s ", name);
+	}
+
+	tmp = buf + *ppos;
+	len -= *ppos;
+
+	if (len > *lenp)
+		len = *lenp;
+	if (len)
+		memcpy(buffer, tmp, len);
+	if (len < *lenp) {
+		((char *)buffer)[len] = '\n';
+		len++;
+	}
+
+	*lenp = len;
+	*ppos += len;
+
+	kfree(buf);
+
+	return 0;
+}
+
 static struct ctl_table *
 sd_alloc_ctl_domain_table(struct sched_domain *sd)
 {
@@ -256,7 +312,7 @@ sd_alloc_ctl_domain_table(struct sched_domain *sd)
 	set_table_entry(&table[2], "busy_factor",	  &sd->busy_factor,	    sizeof(int),  0644, proc_dointvec_minmax);
 	set_table_entry(&table[3], "imbalance_pct",	  &sd->imbalance_pct,	    sizeof(int),  0644, proc_dointvec_minmax);
 	set_table_entry(&table[4], "cache_nice_tries",	  &sd->cache_nice_tries,    sizeof(int),  0644, proc_dointvec_minmax);
-	set_table_entry(&table[5], "flags",		  &sd->flags,		    sizeof(int),  0444, proc_dointvec_minmax);
+	set_table_entry(&table[5], "flags",		  &sd->flags,		    sizeof(int),  0444, sd_ctl_doflags);
 	set_table_entry(&table[6], "max_newidle_lb_cost", &sd->max_newidle_lb_cost, sizeof(long), 0644, proc_doulongvec_minmax);
 	set_table_entry(&table[7], "name",		  sd->name,	       CORENAME_MAX_SIZE, 0444, proc_dostring);
 	/* &table[8] is terminator */
@@ -400,11 +456,10 @@ static void print_cfs_group_stats(struct seq_file *m, int cpu, struct task_group
 	}
 
 	P(se->load.weight);
-	P(se->runnable_weight);
 #ifdef CONFIG_SMP
 	P(se->avg.load_avg);
 	P(se->avg.util_avg);
-	P(se->avg.runnable_load_avg);
+	P(se->avg.runnable_avg);
 #endif
 
 #undef PN_SCHEDSTAT
@@ -457,7 +512,7 @@ print_task(struct seq_file *m, struct rq *rq, struct task_struct *p)
 	else
 		SEQ_printf(m, " %c", task_state_to_char(p));
 
-	SEQ_printf(m, "%15s %5d %9Ld.%06ld %9Ld %5d ",
+	SEQ_printf(m, " %15s %5d %9Ld.%06ld %9Ld %5d ",
 		p->comm, task_pid_nr(p),
 		SPLIT_NS(p->se.vruntime),
 		(long long)(p->nvcsw + p->nivcsw),
@@ -484,10 +539,10 @@ static void print_rq(struct seq_file *m, struct rq *rq, int rq_cpu)
 
 	SEQ_printf(m, "\n");
 	SEQ_printf(m, "runnable tasks:\n");
-	SEQ_printf(m, " S           task   PID         tree-key  switches  prio"
+	SEQ_printf(m, " S            task   PID         tree-key  switches  prio"
 		   "     wait-time             sum-exec        sum-sleep\n");
 	SEQ_printf(m, "-------------------------------------------------------"
-		   "----------------------------------------------------\n");
+		   "------------------------------------------------------\n");
 
 	rcu_read_lock();
 	for_each_process_thread(g, p) {
@@ -543,11 +598,10 @@ void print_cfs_rq(struct seq_file *m, int cpu, struct cfs_rq *cfs_rq)
 	SEQ_printf(m, "  .%-30s: %d\n", "nr_running", cfs_rq->nr_running);
 	SEQ_printf(m, "  .%-30s: %ld\n", "load", cfs_rq->load.weight);
 #ifdef CONFIG_SMP
-	SEQ_printf(m, "  .%-30s: %ld\n", "runnable_weight", cfs_rq->runnable_weight);
 	SEQ_printf(m, "  .%-30s: %lu\n", "load_avg",
 			cfs_rq->avg.load_avg);
-	SEQ_printf(m, "  .%-30s: %lu\n", "runnable_load_avg",
-			cfs_rq->avg.runnable_load_avg);
+	SEQ_printf(m, "  .%-30s: %lu\n", "runnable_avg",
+			cfs_rq->avg.runnable_avg);
 	SEQ_printf(m, "  .%-30s: %lu\n", "util_avg",
 			cfs_rq->avg.util_avg);
 	SEQ_printf(m, "  .%-30s: %u\n", "util_est_enqueued",
@@ -556,8 +610,8 @@ void print_cfs_rq(struct seq_file *m, int cpu, struct cfs_rq *cfs_rq)
 			cfs_rq->removed.load_avg);
 	SEQ_printf(m, "  .%-30s: %ld\n", "removed.util_avg",
 			cfs_rq->removed.util_avg);
-	SEQ_printf(m, "  .%-30s: %ld\n", "removed.runnable_sum",
-			cfs_rq->removed.runnable_sum);
+	SEQ_printf(m, "  .%-30s: %ld\n", "removed.runnable_avg",
+			cfs_rq->removed.runnable_avg);
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	SEQ_printf(m, "  .%-30s: %lu\n", "tg_load_avg_contrib",
 			cfs_rq->tg_load_avg_contrib);
@@ -658,21 +712,11 @@ do {									\
 
 	P(nr_running);
 	P(nr_switches);
-	P(nr_load_updates);
 	P(nr_uninterruptible);
 	PN(next_balance);
 	SEQ_printf(m, "  .%-30s: %ld\n", "curr->pid", (long)(task_pid_nr(rq->curr)));
 	PN(clock);
 	PN(clock_task);
-#ifdef CONFIG_SMP
-	P(cpu_capacity);
-#endif
-#ifdef CONFIG_SCHED_WALT
-	P(wrq.cluster->cur_freq);
-	P(wrq.walt_stats.nr_big_tasks);
-	SEQ_printf(m, "  .%-30s: %llu\n", "walt_stats.cumulative_runnable_avg",
-			rq->wrq.walt_stats.cumulative_runnable_avg_scaled);
-#endif
 #undef P
 #undef PN
 
@@ -749,11 +793,6 @@ static void sched_debug_header(struct seq_file *m)
 	PN(sysctl_sched_wakeup_granularity);
 	P(sysctl_sched_child_runs_first);
 	P(sysctl_sched_features);
-#ifdef CONFIG_SCHED_WALT
-	P(sched_init_task_load_windows);
-	P(sched_ravg_window);
-	P(sched_load_granule);
-#endif
 #undef PN
 #undef P
 
@@ -781,9 +820,16 @@ void sysrq_sched_debug_show(void)
 	int cpu;
 
 	sched_debug_header(NULL);
-	for_each_online_cpu(cpu)
+	for_each_online_cpu(cpu) {
+		/*
+		 * Need to reset softlockup watchdogs on all CPUs, because
+		 * another CPU might be blocked waiting for us to process
+		 * an IPI or stop_machine.
+		 */
+		touch_nmi_watchdog();
+		touch_all_softlockup_watchdogs();
 		print_cpu(NULL, cpu);
-
+	}
 }
 
 /*
@@ -841,10 +887,13 @@ static int __init init_sched_debug_procfs(void)
 
 __initcall(init_sched_debug_procfs);
 
-#define __P(F)	SEQ_printf(m, "%-45s:%21Ld\n",	     #F, (long long)F)
-#define   P(F)	SEQ_printf(m, "%-45s:%21Ld\n",	     #F, (long long)p->F)
-#define __PN(F)	SEQ_printf(m, "%-45s:%14Ld.%06ld\n", #F, SPLIT_NS((long long)F))
-#define   PN(F)	SEQ_printf(m, "%-45s:%14Ld.%06ld\n", #F, SPLIT_NS((long long)p->F))
+#define __PS(S, F) SEQ_printf(m, "%-45s:%21Ld\n", S, (long long)(F))
+#define __P(F) __PS(#F, F)
+#define   P(F) __PS(#F, p->F)
+#define   PM(F, M) __PS(#F, p->F & (M))
+#define __PSN(S, F) SEQ_printf(m, "%-45s:%14Ld.%06ld\n", S, SPLIT_NS((long long)(F)))
+#define __PN(F) __PSN(#F, F)
+#define   PN(F) __PSN(#F, p->F)
 
 
 #ifdef CONFIG_NUMA_BALANCING
@@ -861,8 +910,17 @@ void print_numa_stats(struct seq_file *m, int node, unsigned long tsf,
 static void sched_show_numa(struct task_struct *p, struct seq_file *m)
 {
 #ifdef CONFIG_NUMA_BALANCING
+	struct mempolicy *pol;
+
 	if (p->mm)
 		P(mm->numa_scan_seq);
+
+	task_lock(p);
+	pol = p->mempolicy;
+	if (pol && !(pol->flags & MPOL_F_MORON))
+		pol = NULL;
+	mpol_get(pol);
+	task_unlock(p);
 
 	P(numa_pages_migrated);
 	P(numa_preferred_nid);
@@ -870,6 +928,7 @@ static void sched_show_numa(struct task_struct *p, struct seq_file *m)
 	SEQ_printf(m, "current_node=%d, numa_group_id=%d\n",
 			task_node(p), task_numa_group_id(p));
 	show_numa_stats(p, m);
+	mpol_put(pol);
 #endif
 }
 
@@ -883,18 +942,9 @@ void proc_sched_show_task(struct task_struct *p, struct pid_namespace *ns,
 	SEQ_printf(m,
 		"---------------------------------------------------------"
 		"----------\n");
-#define __P(F) \
-	SEQ_printf(m, "%-45s:%21Ld\n", #F, (long long)F)
-#define P(F) \
-	SEQ_printf(m, "%-45s:%21Ld\n", #F, (long long)p->F)
-#define P_SCHEDSTAT(F) \
-	SEQ_printf(m, "%-45s:%21Ld\n", #F, (long long)schedstat_val(p->F))
-#define __PN(F) \
-	SEQ_printf(m, "%-45s:%14Ld.%06ld\n", #F, SPLIT_NS((long long)F))
-#define PN(F) \
-	SEQ_printf(m, "%-45s:%14Ld.%06ld\n", #F, SPLIT_NS((long long)p->F))
-#define PN_SCHEDSTAT(F) \
-	SEQ_printf(m, "%-45s:%14Ld.%06ld\n", #F, SPLIT_NS((long long)schedstat_val(p->F)))
+
+#define P_SCHEDSTAT(F)  __PS(#F, schedstat_val(p->F))
+#define PN_SCHEDSTAT(F) __PSN(#F, schedstat_val(p->F))
 
 	PN(se.exec_start);
 	PN(se.vruntime);
@@ -954,23 +1004,26 @@ void proc_sched_show_task(struct task_struct *p, struct pid_namespace *ns,
 	}
 
 	__P(nr_switches);
-	SEQ_printf(m, "%-45s:%21Ld\n",
-		   "nr_voluntary_switches", (long long)p->nvcsw);
-	SEQ_printf(m, "%-45s:%21Ld\n",
-		   "nr_involuntary_switches", (long long)p->nivcsw);
+	__PS("nr_voluntary_switches", p->nvcsw);
+	__PS("nr_involuntary_switches", p->nivcsw);
 
 	P(se.load.weight);
-	P(se.runnable_weight);
 #ifdef CONFIG_SMP
 	P(se.avg.load_sum);
-	P(se.avg.runnable_load_sum);
+	P(se.avg.runnable_sum);
 	P(se.avg.util_sum);
 	P(se.avg.load_avg);
-	P(se.avg.runnable_load_avg);
+	P(se.avg.runnable_avg);
 	P(se.avg.util_avg);
 	P(se.avg.last_update_time);
 	P(se.avg.util_est.ewma);
-	P(se.avg.util_est.enqueued);
+	PM(se.avg.util_est.enqueued, ~UTIL_AVG_UNCHANGED);
+#endif
+#ifdef CONFIG_UCLAMP_TASK
+	__PS("uclamp.min", p->uclamp_req[UCLAMP_MIN].value);
+	__PS("uclamp.max", p->uclamp_req[UCLAMP_MAX].value);
+	__PS("effective uclamp.min", uclamp_eff_value(p, UCLAMP_MIN));
+	__PS("effective uclamp.max", uclamp_eff_value(p, UCLAMP_MAX));
 #endif
 	P(policy);
 	P(prio);
@@ -979,11 +1032,7 @@ void proc_sched_show_task(struct task_struct *p, struct pid_namespace *ns,
 		P(dl.deadline);
 	}
 #undef PN_SCHEDSTAT
-#undef PN
-#undef __PN
 #undef P_SCHEDSTAT
-#undef P
-#undef __P
 
 	{
 		unsigned int this_cpu = raw_smp_processor_id();
@@ -991,8 +1040,7 @@ void proc_sched_show_task(struct task_struct *p, struct pid_namespace *ns,
 
 		t0 = cpu_clock(this_cpu);
 		t1 = cpu_clock(this_cpu);
-		SEQ_printf(m, "%-45s:%21Ld\n",
-			   "clock-delta", (long long)(t1-t0));
+		__PS("clock-delta", t1-t0);
 	}
 
 	sched_show_numa(p, m);
